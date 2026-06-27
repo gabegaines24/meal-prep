@@ -2,11 +2,13 @@ import { NavLink, Route, Routes } from "react-router-dom";
 import Planner from "./pages/Planner";
 import Goals from "./pages/Goals";
 import Scanner from "./pages/Scanner";
+import ProfilePage from "./pages/Profile";
 
 const NAV = [
   { to: "/", label: "Planner" },
   { to: "/goals", label: "Goals" },
   { to: "/scanner", label: "Fridge Scanner" },
+  { to: "/profile", label: "Profile" },
 ];
 
 export default function App() {
@@ -39,6 +41,7 @@ export default function App() {
           <Route path="/" element={<Planner />} />
           <Route path="/goals" element={<Goals />} />
           <Route path="/scanner" element={<Scanner />} />
+          <Route path="/profile" element={<ProfilePage />} />
         </Routes>
       </main>
     </div>

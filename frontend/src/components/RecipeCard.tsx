@@ -2,6 +2,15 @@ import type { Recipe } from "../api/recipes";
 import { toggleFavorite } from "../api/recipes";
 import { useQueryClient } from "@tanstack/react-query";
 
+function CostBadge({ cost }: { cost?: number | null }) {
+  if (cost == null) return null;
+  return (
+    <span className="text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full px-2 py-0.5">
+      ${cost.toFixed(2)}
+    </span>
+  );
+}
+
 interface Props {
   recipe: Recipe;
   compact?: boolean;
@@ -75,6 +84,11 @@ export default function RecipeCard({ recipe, compact = false, onSelect, onRemove
             ★
           </button>
         </div>
+        {recipe.estimated_cost != null && (
+          <div className="mt-1">
+            <CostBadge cost={recipe.estimated_cost} />
+          </div>
+        )}
         <div className="mt-2 grid grid-cols-4 gap-1 text-center text-xs">
           {[
             { label: "Cal", value: recipe.calories },
