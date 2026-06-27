@@ -17,11 +17,8 @@ dependencies = [
     "python-dotenv==1.0.1",
 ]
 
-[project.scripts]
-start = "uvicorn backend.main:app --reload"
-
-[tool.uv]
-dev-dependencies = []
+[tool.hatch.build.targets.wheel]
+packages = ["backend"]
 
 [build-system]
 requires = ["hatchling"]
