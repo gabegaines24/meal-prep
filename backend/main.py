@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.database import Base, engine
-from backend.routes import email, goals, meals, recipes, scan
+from backend.routes import email, files, goals, meals, profile, recipes, scan
 
 
 def create_tables():
@@ -55,6 +55,8 @@ app.include_router(recipes.router, prefix="/recipes", tags=["recipes"])
 app.include_router(scan.router, prefix="/scan", tags=["scan"])
 app.include_router(email.router, prefix="/email", tags=["email"])
 app.include_router(goals.router, prefix="/goals", tags=["goals"])
+app.include_router(profile.router, prefix="/profile", tags=["profile"])
+app.include_router(files.router, prefix="/files", tags=["files"])
 
 
 @app.get("/health")

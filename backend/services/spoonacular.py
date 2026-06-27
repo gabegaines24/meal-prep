@@ -18,8 +18,19 @@ def _params(**kwargs: Any) -> dict:
     return {"apiKey": _api_key(), **kwargs}
 
 
-async def search_recipes(query: str, number: int = 12) -> list[dict]:
-    """Search recipes by keyword. Returns a list of summary dicts."""
+async def search_recipes(
+    query: str,
+    number: int = 12,
+    diet: str = "",
+    intolerances: list[str] | None = None,
+) -> list[dict]:
+    """Search recipes by keyword with optional diet and allergen filters."""
+    extra: dict[str, Any] = {}
+    if diet:
+        extra["diet"] = diet
+    if intolerances:
+        extra["intolerances"] = ",".join(intolerances)
+
     async with httpx.AsyncClient() as client:
         resp = await client.get(
             f"{BASE_URL}/recipes/complexSearch",
@@ -28,6 +39,7 @@ async def search_recipes(query: str, number: int = 12) -> list[dict]:
                 number=number,
                 addRecipeNutrition=True,
                 instructionsRequired=True,
+                **extra,
             ),
             timeout=15,
         )
@@ -37,7 +49,7 @@ async def search_recipes(query: str, number: int = 12) -> list[dict]:
 
 
 async def get_recipe_by_id(spoonacular_id: int) -> dict:
-    """Fetch full recipe details including nutrition."""
+    """Fetch full recipe details including nutrition and instructions."""
     async with httpx.AsyncClient() as client:
         resp = await client.get(
             f"{BASE_URL}/recipes/{spoonacular_id}/information",
@@ -89,6 +101,14 @@ def _normalise(raw: dict) -> dict:
         for i in raw.get("extendedIngredients", [])
     ]
 
+    # Extract step-by-step instructions from analyzedInstructions
+    steps: list[str] = []
+    for section in raw.get("analyzedInstructions", []):
+        for step in section.get("steps", []):
+            text = step.get("step", "").strip()
+            if text:
+                steps.append(text)
+
     return {
         "spoonacular_id": raw.get("id"),
         "title": raw.get("title", ""),
@@ -99,4 +119,5 @@ def _normalise(raw: dict) -> dict:
         "carbs": nutrients.get("carbohydrates"),
         "fat": nutrients.get("fat"),
         "ingredients_json": json.dumps(ingredients),
+        "instructions_json": json.dumps(steps) if steps else None,
     }

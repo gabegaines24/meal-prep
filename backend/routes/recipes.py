@@ -6,10 +6,23 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
-from backend.models.models import Recipe
+from backend.models.models import Recipe, UserProfile
 from backend.services import spoonacular
 
 router = APIRouter()
+
+
+def _load_filters(db: Session) -> tuple[str, list[str]]:
+    """Return (diet_type, allergens) from the stored UserProfile."""
+    profile = db.query(UserProfile).filter(UserProfile.id == 1).first()
+    if not profile:
+        return "", []
+    allergens: list[str] = []
+    try:
+        allergens = json.loads(profile.allergens_json or "[]")
+    except json.JSONDecodeError:
+        pass
+    return profile.diet_type or "", allergens
 
 
 class RecipeOut(BaseModel):
@@ -23,6 +36,7 @@ class RecipeOut(BaseModel):
     carbs: Optional[float] = None
     fat: Optional[float] = None
     ingredients: list[str] = []
+    estimated_cost: Optional[float] = None
     favorited: bool = False
 
     model_config = {"from_attributes": True}
@@ -46,6 +60,7 @@ def _to_out(recipe: Recipe) -> RecipeOut:
         carbs=recipe.carbs,
         fat=recipe.fat,
         ingredients=ingredients,
+        estimated_cost=recipe.estimated_cost,
         favorited=recipe.favorited,
     )
 
@@ -76,7 +91,8 @@ async def search_recipes(
     query: str = Query(..., min_length=1),
     db: Session = Depends(get_db),
 ):
-    results = await spoonacular.search_recipes(query)
+    diet, allergens = _load_filters(db)
+    results = await spoonacular.search_recipes(query, diet=diet, intolerances=allergens)
     return [_to_out(_upsert_recipe(db, r)) for r in results]
 
 

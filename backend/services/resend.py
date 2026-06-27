@@ -91,14 +91,36 @@ def _render_html(week_start: date, slots: list, weekly_macros: dict) -> str:
 """
 
 
-def send_digest(week_start: date, slots: list, weekly_macros: dict) -> dict:
+def send_digest(
+    week_start: date,
+    slots: list,
+    weekly_macros: dict,
+    grocery_list_html: str | None = None,
+    recipe_book_html: str | None = None,
+) -> dict:
     resend_sdk.api_key = _api_key()
     recipient = _recipient()
     html = _render_html(week_start, slots, weekly_macros)
 
-    return resend_sdk.Emails.send({
+    attachments = []
+    if grocery_list_html:
+        attachments.append({
+            "filename": f"grocery-list-{week_start}.html",
+            "content": list(grocery_list_html.encode("utf-8")),
+        })
+    if recipe_book_html:
+        attachments.append({
+            "filename": f"recipe-book-{week_start}.html",
+            "content": list(recipe_book_html.encode("utf-8")),
+        })
+
+    payload: dict = {
         "from": "Meal Planner <onboarding@resend.dev>",
         "to": [recipient],
         "subject": f"Your Meal Plan — Week of {week_start.strftime('%B %d, %Y')}",
         "html": html,
-    })
+    }
+    if attachments:
+        payload["attachments"] = attachments
+
+    return resend_sdk.Emails.send(payload)
