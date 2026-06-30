@@ -8,10 +8,30 @@ from sqlalchemy.orm import Session
 
 from backend.database import get_db
 from backend.models.models import MacroGoals, MealPlan, MealType, Recipe
+from backend.routes.recipes import _load_filters, _upsert_recipe
+from backend.services import spoonacular
 
 router = APIRouter()
 
 DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+
+MEAL_FRAC = {
+    MealType.breakfast: 0.25,
+    MealType.lunch: 0.35,
+    MealType.dinner: 0.40,
+}
+
+MACRO_WEIGHTS = {"calories": 1.0, "protein": 2.0, "carbs": 1.0, "fat": 1.0}
+
+SEED_QUERIES = [
+    "healthy breakfast",
+    "healthy lunch",
+    "healthy dinner",
+    "high protein",
+    "chicken",
+    "salad",
+    "pasta",
+]
 
 
 class RecipeSummary(BaseModel):
@@ -40,15 +60,27 @@ class SlotIn(BaseModel):
     recipe_id: int
 
 
+class MacroGap(BaseModel):
+    macro: str
+    actual: float
+    target: float
+    gap: float
+
+
 class WeekOut(BaseModel):
     week_start_date: date
     slots: list[SlotOut]
-    daily_macros: list[dict]  # one entry per day, keys: day, calories, protein, carbs, fat
+    daily_macros: list[dict]
     weekly_macros: dict
+    macro_gaps: list[MacroGap] = []
 
 
 def _monday(d: date) -> date:
     return d - timedelta(days=d.weekday())
+
+
+def _macro_value(recipe: Recipe, key: str) -> float:
+    return getattr(recipe, key) or 0.0
 
 
 def _compute_macros(slots: list[MealPlan]) -> tuple[list[dict], dict]:
@@ -72,20 +104,103 @@ def _compute_macros(slots: list[MealPlan]) -> tuple[list[dict], dict]:
     return list(daily.values()), weekly
 
 
+def _compute_macro_gaps(weekly: dict, goals: MacroGoals) -> list[MacroGap]:
+    gaps: list[MacroGap] = []
+    weekly_targets = {
+        "calories": goals.calories * 7,
+        "protein": goals.protein * 7,
+        "carbs": goals.carbs * 7,
+        "fat": goals.fat * 7,
+    }
+    for key, target in weekly_targets.items():
+        actual = weekly[key]
+        gap = target - actual
+        if abs(gap) >= 1:
+            gaps.append(MacroGap(macro=key, actual=actual, target=target, gap=gap))
+    return gaps
+
+
+def _meal_targets(goals: MacroGoals, meal_type: MealType) -> dict[str, float]:
+    frac = MEAL_FRAC[meal_type]
+    return {
+        "calories": goals.calories * frac,
+        "protein": goals.protein * frac,
+        "carbs": goals.carbs * frac,
+        "fat": goals.fat * frac,
+    }
+
+
+def _score_recipe(
+    recipe: Recipe,
+    meal_target: dict[str, float],
+    day_remaining: dict[str, float],
+    week_remaining: dict[str, float],
+) -> float:
+    """Lower is better."""
+    score = 0.0
+    for key, weight in MACRO_WEIGHTS.items():
+        value = _macro_value(recipe, key)
+        meal_goal = max(meal_target[key], 1.0)
+        score += weight * abs(value - meal_target[key]) / meal_goal
+
+        if day_remaining[key] > 0:
+            score += 0.3 * weight * abs(value - day_remaining[key]) / max(day_remaining[key], 1.0)
+        if week_remaining[key] > 0:
+            score += 0.15 * weight * abs(value - week_remaining[key]) / max(week_remaining[key], 1.0)
+
+    if recipe.favorited:
+        score *= 0.65
+    return score
+
+
+async def _ensure_recipe_details(db: Session, recipe: Recipe) -> Recipe:
+    if recipe.ingredients_json and recipe.calories is not None:
+        return recipe
+    if not recipe.spoonacular_id:
+        return recipe
+    data = await spoonacular.get_recipe_by_id(recipe.spoonacular_id)
+    data["favorited"] = recipe.favorited
+    return _upsert_recipe(db, data)
+
+
+async def _seed_recipe_pool(db: Session, diet: str, allergens: list[str]) -> list[Recipe]:
+    favorites = db.query(Recipe).filter(Recipe.favorited == True).all()
+    all_recipes = db.query(Recipe).all()
+
+    if len(all_recipes) >= 15 and favorites:
+        return favorites
+
+    for query in SEED_QUERIES:
+        results = await spoonacular.search_recipes(
+            query, number=6, diet=diet, intolerances=allergens
+        )
+        for data in results:
+            _upsert_recipe(db, data)
+
+    favorites = db.query(Recipe).filter(Recipe.favorited == True).all()
+    if favorites:
+        return favorites
+    return db.query(Recipe).all()
+
+
 @router.get("", response_model=WeekOut)
 def get_week(week_start: Optional[date] = None, db: Session = Depends(get_db)):
     start = _monday(week_start or date.today())
-    slots = (
-        db.query(MealPlan)
-        .filter(MealPlan.week_start_date == start)
-        .all()
-    )
+    slots = db.query(MealPlan).filter(MealPlan.week_start_date == start).all()
     daily, weekly = _compute_macros(slots)
-    return WeekOut(week_start_date=start, slots=slots, daily_macros=daily, weekly_macros=weekly)
+    goals = db.query(MacroGoals).filter(MacroGoals.id == 1).first()
+    gaps = _compute_macro_gaps(weekly, goals) if goals else []
+    return WeekOut(
+        week_start_date=start,
+        slots=slots,
+        daily_macros=daily,
+        weekly_macros=weekly,
+        macro_gaps=gaps,
+    )
 
 
 @router.put("/{day}/{meal_type}", response_model=SlotOut)
-def assign_slot(
+async def assign_slot(
     day: int,
     meal_type: MealType,
     payload: SlotIn,
@@ -98,6 +213,8 @@ def assign_slot(
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
 
+    recipe = await _ensure_recipe_details(db, recipe)
+
     start = _monday(week_start or date.today())
     slot = (
         db.query(MealPlan)
@@ -109,13 +226,13 @@ def assign_slot(
         .first()
     )
     if slot:
-        slot.recipe_id = payload.recipe_id
+        slot.recipe_id = recipe.id
     else:
         slot = MealPlan(
             week_start_date=start,
             day_of_week=day,
             meal_type=meal_type,
-            recipe_id=payload.recipe_id,
+            recipe_id=recipe.id,
         )
         db.add(slot)
     db.commit()
@@ -146,53 +263,79 @@ def clear_slot(
 
 
 @router.post("/autogenerate", response_model=WeekOut)
-def autogenerate(week_start: Optional[date] = None, db: Session = Depends(get_db)):
-    """
-    Fill the current week with randomly selected cached recipes.
-    Only assigns slots that are currently empty.
-    """
+async def autogenerate(week_start: Optional[date] = None, db: Session = Depends(get_db)):
+    """Fill empty slots using macro goals. Prefers favorited recipes."""
     start = _monday(week_start or date.today())
-    recipes = db.query(Recipe).all()
+    goals = db.query(MacroGoals).filter(MacroGoals.id == 1).first()
+    if not goals:
+        goals = MacroGoals(id=1)
+        db.add(goals)
+        db.commit()
+        db.refresh(goals)
+
+    diet, allergens = _load_filters(db)
+    recipes = await _seed_recipe_pool(db, diet, allergens)
     if not recipes:
         raise HTTPException(
             status_code=400,
-            detail="No recipes in the database yet. Search for some recipes first.",
+            detail="No recipes available. Search for recipes or check your API key.",
         )
 
-    goals = db.query(MacroGoals).filter(MacroGoals.id == 1).first()
-    target_cal = goals.calories if goals else 2000
+    weekly_targets = {
+        "calories": goals.calories * 7,
+        "protein": goals.protein * 7,
+        "carbs": goals.carbs * 7,
+        "fat": goals.fat * 7,
+    }
+    week_totals = {"calories": 0.0, "protein": 0.0, "carbs": 0.0, "fat": 0.0}
+    daily_totals: dict[int, dict[str, float]] = {
+        i: {"calories": 0.0, "protein": 0.0, "carbs": 0.0, "fat": 0.0} for i in range(7)
+    }
 
-    # Aim to distribute calories roughly evenly across meals
-    # breakfast ~25%, lunch ~35%, dinner ~40%
-    targets = {
-        MealType.breakfast: target_cal * 0.25,
-        MealType.lunch: target_cal * 0.35,
-        MealType.dinner: target_cal * 0.40,
+    existing_slots = db.query(MealPlan).filter(MealPlan.week_start_date == start).all()
+    for slot in existing_slots:
+        if not slot.recipe:
+            continue
+        for key in week_totals:
+            week_totals[key] += _macro_value(slot.recipe, key)
+            daily_totals[slot.day_of_week][key] += _macro_value(slot.recipe, key)
+
+    used_ids: set[int] = {
+        s.recipe_id for s in existing_slots if s.recipe_id is not None
     }
 
     for day in range(7):
         for meal_type in MealType:
-            existing = (
-                db.query(MealPlan)
-                .filter(
-                    MealPlan.week_start_date == start,
-                    MealPlan.day_of_week == day,
-                    MealPlan.meal_type == meal_type,
-                )
-                .first()
+            existing = next(
+                (
+                    s
+                    for s in existing_slots
+                    if s.day_of_week == day and s.meal_type == meal_type
+                ),
+                None,
             )
             if existing:
                 continue
 
-            # Pick the recipe whose calorie count is closest to the meal target
-            target = targets[meal_type]
-            best = min(
+            meal_target = _meal_targets(goals, meal_type)
+            day_remaining = {
+                key: max(getattr(goals, key) - daily_totals[day][key], 0)
+                for key in MACRO_WEIGHTS
+            }
+            week_remaining = {
+                key: max(weekly_targets[key] - week_totals[key], 0)
+                for key in MACRO_WEIGHTS
+            }
+
+            scored = sorted(
                 recipes,
-                key=lambda r: abs((r.calories or 500) - target),
+                key=lambda r: _score_recipe(r, meal_target, day_remaining, week_remaining),
             )
-            # Add a little variety by picking randomly from the 3 closest options
-            candidates = sorted(recipes, key=lambda r: abs((r.calories or 500) - target))[:3]
-            chosen = random.choice(candidates)
+            top = scored[:5]
+            # Prefer unused recipes for variety, fall back if pool is small
+            unused = [r for r in top if r.id not in used_ids]
+            candidates = unused if unused else top
+            chosen = random.choice(candidates[:3] if len(candidates) >= 3 else candidates)
 
             slot = MealPlan(
                 week_start_date=start,
@@ -201,9 +344,20 @@ def autogenerate(week_start: Optional[date] = None, db: Session = Depends(get_db
                 recipe_id=chosen.id,
             )
             db.add(slot)
+            used_ids.add(chosen.id)
+            for key in week_totals:
+                week_totals[key] += _macro_value(chosen, key)
+                daily_totals[day][key] += _macro_value(chosen, key)
 
     db.commit()
 
     slots = db.query(MealPlan).filter(MealPlan.week_start_date == start).all()
     daily, weekly = _compute_macros(slots)
-    return WeekOut(week_start_date=start, slots=slots, daily_macros=daily, weekly_macros=weekly)
+    gaps = _compute_macro_gaps(weekly, goals)
+    return WeekOut(
+        week_start_date=start,
+        slots=slots,
+        daily_macros=daily,
+        weekly_macros=weekly,
+        macro_gaps=gaps,
+    )

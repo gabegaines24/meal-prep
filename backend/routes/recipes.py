@@ -36,7 +36,6 @@ class RecipeOut(BaseModel):
     carbs: Optional[float] = None
     fat: Optional[float] = None
     ingredients: list[str] = []
-    estimated_cost: Optional[float] = None
     favorited: bool = False
 
     model_config = {"from_attributes": True}
@@ -60,7 +59,6 @@ def _to_out(recipe: Recipe) -> RecipeOut:
         carbs=recipe.carbs,
         fat=recipe.fat,
         ingredients=ingredients,
-        estimated_cost=recipe.estimated_cost,
         favorited=recipe.favorited,
     )
 

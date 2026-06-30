@@ -1,4 +1,3 @@
-import json
 from datetime import date, timedelta
 from typing import Optional
 
@@ -6,8 +5,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
-from backend.models.models import MealPlan, UserProfile
-from backend.services import file_gen, kroger, resend as resend_svc
+from backend.models.models import MealPlan
+from backend.services import file_gen, resend as resend_svc
 
 router = APIRouter()
 
@@ -39,41 +38,7 @@ async def send_digest(week_start: Optional[date] = None, db: Session = Depends(g
         )
 
     weekly_macros = _compute_weekly_macros(slots)
-
-    # Build file attachments
-    profile = db.query(UserProfile).filter(UserProfile.id == 1).first()
-    store_name = profile.store_name if profile else ""
-    weekly_budget = profile.weekly_budget if profile else 0.0
-    location_id = profile.kroger_location_id if profile else ""
-
-    # Gather unique ingredients for Kroger pricing
-    all_ingredients: list[str] = []
-    seen: set[str] = set()
-    for slot in slots:
-        if slot.recipe and slot.recipe.ingredients_json:
-            try:
-                for ing in json.loads(slot.recipe.ingredients_json):
-                    key = ing.lower().strip()
-                    if key not in seen:
-                        seen.add(key)
-                        all_ingredients.append(ing)
-            except json.JSONDecodeError:
-                pass
-
-    prices: dict = {}
-    if kroger.kroger_configured() and all_ingredients and location_id:
-        try:
-            prices = await kroger.estimate_ingredient_costs(all_ingredients, location_id)
-        except Exception:
-            prices = {}
-
-    grocery_html = file_gen.grocery_list_html(
-        week_start=start,
-        slots=slots,
-        store_name=store_name,
-        weekly_budget=weekly_budget,
-        ingredient_prices=prices,
-    )
+    grocery_html = file_gen.grocery_list_html(week_start=start, slots=slots)
     recipe_html = file_gen.recipe_book_html(week_start=start, slots=slots)
 
     try:

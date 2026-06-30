@@ -1,9 +1,6 @@
 const BASE = "/api/profile";
 
 export interface Profile {
-  store_name: string;
-  kroger_location_id: string;
-  weekly_budget: number;
   allergens: string[];
   diet_type: string;
 }

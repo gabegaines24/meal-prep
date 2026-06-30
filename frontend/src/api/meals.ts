@@ -31,6 +31,14 @@ export interface WeekResponse {
   slots: Slot[];
   daily_macros: DayMacros[];
   weekly_macros: { calories: number; protein: number; carbs: number; fat: number };
+  macro_gaps?: MacroGap[];
+}
+
+export interface MacroGap {
+  macro: string;
+  actual: number;
+  target: number;
+  gap: number;
 }
 
 export async function getWeek(weekStart?: string): Promise<WeekResponse> {

@@ -26,7 +26,6 @@ class Recipe(Base):
     fat = Column(Float, nullable=True)
     ingredients_json = Column(String, nullable=True)   # JSON list of ingredient strings
     instructions_json = Column(String, nullable=True)  # JSON list of step strings
-    estimated_cost = Column(Float, nullable=True)      # dollars, from Kroger pricing
     favorited = Column(Boolean, default=False)
 
     meal_slots = relationship("MealPlan", back_populates="recipe")
@@ -58,8 +57,5 @@ class UserProfile(Base):
     __tablename__ = "user_profile"
 
     id = Column(Integer, primary_key=True, default=1)
-    store_name = Column(String, default="")
-    kroger_location_id = Column(String, default="")
-    weekly_budget = Column(Float, default=0.0)
     allergens_json = Column(String, default="[]")  # JSON list, e.g. ["peanuts", "gluten"]
     diet_type = Column(String, default="")         # Spoonacular value or empty

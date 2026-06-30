@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getWeek, assignSlot, clearSlot, autogenerate } from "../api/meals";
-import { searchRecipes } from "../api/recipes";
+import { searchRecipes, getFavorites } from "../api/recipes";
 import type { Recipe } from "../api/recipes";
 import type { Slot } from "../api/meals";
 import RecipeCard from "./RecipeCard";
@@ -9,6 +9,13 @@ import RecipeCard from "./RecipeCard";
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const MEALS = ["breakfast", "lunch", "dinner"] as const;
 type MealType = (typeof MEALS)[number];
+
+const MACRO_UNITS: Record<string, string> = {
+  calories: "kcal",
+  protein: "g",
+  carbs: "g",
+  fat: "g",
+};
 
 interface DrawerState {
   day: number;
@@ -22,10 +29,17 @@ export default function WeeklyPlanner() {
   const [search, setSearch] = useState("");
   const [searchResults, setSearchResults] = useState<Recipe[]>([]);
   const [searching, setSearching] = useState(false);
+  const [drawerTab, setDrawerTab] = useState<"search" | "favorites">("search");
 
   const { data, isLoading } = useQuery({
     queryKey: ["week", weekStart],
     queryFn: () => getWeek(weekStart),
+  });
+
+  const { data: favorites = [] } = useQuery({
+    queryKey: ["favorites"],
+    queryFn: getFavorites,
+    enabled: !!drawer,
   });
 
   const assign = useMutation({
@@ -33,6 +47,7 @@ export default function WeeklyPlanner() {
       assignSlot(day, mealType, recipeId, weekStart),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["week"] });
+      qc.invalidateQueries({ queryKey: ["grocery-list"] });
       setDrawer(null);
       setSearch("");
       setSearchResults([]);
@@ -42,12 +57,18 @@ export default function WeeklyPlanner() {
   const clear = useMutation({
     mutationFn: ({ day, mealType }: { day: number; mealType: string }) =>
       clearSlot(day, mealType, weekStart),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["week"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["week"] });
+      qc.invalidateQueries({ queryKey: ["grocery-list"] });
+    },
   });
 
   const generate = useMutation({
     mutationFn: () => autogenerate(weekStart),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["week"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["week"] });
+      qc.invalidateQueries({ queryKey: ["grocery-list"] });
+    },
   });
 
   async function handleSearch() {
@@ -69,6 +90,8 @@ export default function WeeklyPlanner() {
     return <div className="text-center py-12 text-gray-400">Loading meal plan…</div>;
   }
 
+  const gaps = data?.macro_gaps ?? [];
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -84,7 +107,19 @@ export default function WeeklyPlanner() {
         </button>
       </div>
 
-      {/* Grid */}
+      {gaps.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-800">
+          <span className="font-medium">Macro gaps this week: </span>
+          {gaps.map((g, i) => (
+            <span key={g.macro}>
+              {i > 0 && " · "}
+              {g.gap > 0 ? `${g.gap.toFixed(0)} short` : `${Math.abs(g.gap).toFixed(0)} over`}{" "}
+              {g.macro} ({MACRO_UNITS[g.macro] ?? ""})
+            </span>
+          ))}
+        </div>
+      )}
+
       <div className="overflow-x-auto">
         <table className="min-w-full border-separate border-spacing-1">
           <thead>
@@ -115,7 +150,10 @@ export default function WeeklyPlanner() {
                         />
                       ) : (
                         <button
-                          onClick={() => setDrawer({ day: dayIdx, mealType: meal })}
+                          onClick={() => {
+                            setDrawer({ day: dayIdx, mealType: meal });
+                            setDrawerTab("search");
+                          }}
                           className="w-full h-14 border-2 border-dashed border-gray-200 hover:border-emerald-300 rounded-lg text-gray-300 hover:text-emerald-400 text-xl transition-colors"
                         >
                           +
@@ -130,7 +168,6 @@ export default function WeeklyPlanner() {
         </table>
       </div>
 
-      {/* Recipe search drawer */}
       {drawer && (
         <div className="fixed inset-0 bg-black/40 z-40 flex justify-end" onClick={() => setDrawer(null)}>
           <div
@@ -144,38 +181,75 @@ export default function WeeklyPlanner() {
               <button onClick={() => setDrawer(null)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
             </div>
 
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-                placeholder="Search recipes…"
-                className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-400"
-              />
-              <button
-                onClick={handleSearch}
-                disabled={searching}
-                className="bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-2 rounded-lg text-sm disabled:opacity-50"
-              >
-                {searching ? "…" : "Go"}
-              </button>
+            <div className="flex gap-2 border-b border-gray-100 pb-2">
+              {(["search", "favorites"] as const).map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setDrawerTab(tab)}
+                  className={`text-sm px-3 py-1 rounded-lg capitalize ${
+                    drawerTab === tab
+                      ? "bg-emerald-500 text-white"
+                      : "text-gray-500 hover:bg-gray-100"
+                  }`}
+                >
+                  {tab}
+                </button>
+              ))}
             </div>
 
-            <div className="flex-1 overflow-y-auto space-y-2">
-              {searchResults.map((r) => (
-                <RecipeCard
-                  key={r.id}
-                  recipe={r}
-                  onSelect={(recipe) =>
-                    assign.mutate({ day: drawer.day, mealType: drawer.mealType, recipeId: recipe.id })
-                  }
-                />
-              ))}
-              {searchResults.length === 0 && !searching && (
-                <p className="text-sm text-gray-400 text-center pt-8">Search to find recipes</p>
-              )}
-            </div>
+            {drawerTab === "search" ? (
+              <>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+                    placeholder="Search recipes…"
+                    className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-400"
+                  />
+                  <button
+                    onClick={handleSearch}
+                    disabled={searching}
+                    className="bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-2 rounded-lg text-sm disabled:opacity-50"
+                  >
+                    {searching ? "…" : "Go"}
+                  </button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto space-y-2">
+                  {searchResults.map((r) => (
+                    <RecipeCard
+                      key={r.id}
+                      recipe={r}
+                      onSelect={(recipe) =>
+                        assign.mutate({ day: drawer.day, mealType: drawer.mealType, recipeId: recipe.id })
+                      }
+                    />
+                  ))}
+                  {searchResults.length === 0 && !searching && (
+                    <p className="text-sm text-gray-400 text-center pt-8">Search to find recipes</p>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="flex-1 overflow-y-auto space-y-2">
+                {favorites.map((r) => (
+                  <RecipeCard
+                    key={r.id}
+                    recipe={r}
+                    onSelect={(recipe) =>
+                      assign.mutate({ day: drawer.day, mealType: drawer.mealType, recipeId: recipe.id })
+                    }
+                  />
+                ))}
+                {favorites.length === 0 && (
+                  <p className="text-sm text-gray-400 text-center pt-8">
+                    Star recipes to add them here. Favorites are preferred when auto-generating.
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}

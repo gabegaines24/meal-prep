@@ -1,6 +1,6 @@
 # Meal Prep — Personal Meal Planner
 
-A personal meal planning web app with a weekly calendar view, macro tracking, fridge scanning via AI image recognition, and a weekly email digest.
+A personal meal planning web app with a weekly calendar view, macro tracking, nutrition-driven auto-generate, grocery lists, fridge scanning via AI image recognition, and a weekly email digest.
 
 **Stack:** React (Vite) · FastAPI · SQLite · Claude API · Spoonacular API · Resend
 
@@ -8,11 +8,12 @@ A personal meal planning web app with a weekly calendar view, macro tracking, fr
 
 ## Features
 
-- **Weekly Meal Planner** — Mon–Sun calendar with breakfast, lunch, and dinner slots. Assign recipes manually or auto-generate a full week based on your macro goals.
-- **Macro Tracking** — Set daily targets for calories, protein, carbs, and fat. Each recipe displays its macros and the weekly view shows progress toward your goals.
-- **Recipe Database** — Search recipes and nutrition data via the Spoonacular API. Favorited and used recipes are cached locally in SQLite.
-- **Fridge Scanner** — Upload a photo of your fridge. Claude identifies the ingredients and Spoonacular suggests matching recipes.
-- **Weekly Email Digest** — Every Sunday at 6 PM, an automated email delivers the upcoming week's meal plan, a macro summary, and an aggregated shopping list.
+- **Weekly Meal Planner** — Mon–Sun calendar with breakfast, lunch, and dinner slots. Assign recipes manually or auto-generate a full week scored against your macro goals.
+- **Macro Tracking** — Set daily targets for calories, protein, carbs, and fat. Each recipe displays its macros and the planner shows weekly progress and gaps.
+- **Grocery Lists** — Ingredients from your planned meals are aggregated, categorized, and shown in-app with checkboxes. Download a printable HTML list or get it in your weekly email.
+- **Recipe Library** — Search recipes via Spoonacular (respects diet and allergen settings). Favorite recipes for faster planning and auto-generate.
+- **Fridge Scanner** — Upload a photo of your fridge. Claude identifies ingredients and Spoonacular suggests matching recipes.
+- **Weekly Email Digest** — Every Sunday at 6 PM, an automated email delivers the upcoming week's meal plan, macro summary, grocery list, and recipe book.
 
 ---
 
@@ -20,7 +21,7 @@ A personal meal planning web app with a weekly calendar view, macro tracking, fr
 
 - Python 3.11+
 - Node.js 18+
-- A free account at each of the four API providers listed below
+- API keys for Anthropic, Spoonacular, and Resend (see below)
 
 ---
 
@@ -30,7 +31,7 @@ A personal meal planning web app with a weekly calendar view, macro tracking, fr
 
 ```bash
 git clone <repo-url>
-cd "meal prep"
+cd meal-prep
 ```
 
 ### 2. Configure environment variables
@@ -39,19 +40,16 @@ cd "meal prep"
 cp .env.example .env
 ```
 
-Open `.env` and fill in your four API keys (see [API Keys](#api-keys) below).
+Open `.env` and fill in your API keys (see [API Keys](#api-keys) below).
 
 ### 3. Backend
 
 ```bash
-# Create and activate a virtual environment
 python -m venv .venv
 source .venv/bin/activate      # Windows: .venv\Scripts\activate
 
-# Install dependencies
 pip install -r backend/requirements.txt
 
-# Start the API server (runs on http://localhost:8000)
 uvicorn backend.main:app --reload
 ```
 
@@ -60,8 +58,6 @@ uvicorn backend.main:app --reload
 ```bash
 cd frontend
 npm install
-
-# Start the dev server (runs on http://localhost:5173)
 npm run dev
 ```
 
@@ -70,8 +66,6 @@ Open [http://localhost:5173](http://localhost:5173) in your browser.
 ---
 
 ## API Keys
-
-All four services have a free tier sufficient for personal use.
 
 | Key | Where to get it |
 |---|---|
@@ -85,20 +79,17 @@ All four services have a free tier sufficient for personal use.
 ## Project Structure
 
 ```
-meal prep/
+meal-prep/
 ├── backend/
-│   ├── main.py               # FastAPI app, CORS, APScheduler cron
-│   ├── database.py           # SQLAlchemy engine + session
-│   ├── models/models.py      # ORM: Recipe, MealPlan, MacroGoals
-│   ├── routes/               # meals, recipes, scan, email
-│   ├── services/             # claude, spoonacular, resend
-│   └── requirements.txt
+│   ├── main.py
+│   ├── models/models.py
+│   ├── routes/          # meals, recipes, goals, profile, scan, files, email
+│   └── services/        # spoonacular, claude, resend, file_gen, grocery
 ├── frontend/
 │   └── src/
-│       ├── components/       # WeeklyPlanner, MacroSummary, FridgeScanner, RecipeCard
-│       ├── pages/            # Planner, Goals, Scanner
-│       └── api/              # typed fetch wrappers
+│       ├── components/  # WeeklyPlanner, GroceryList, MacroSummary, RecipeCard, FridgeScanner
+│       ├── pages/       # Planner, Goals, Scanner, Profile
+│       └── api/
 ├── .env.example
-├── .gitignore
-└── PLAN.md                   # architecture and build-order notes
+└── PLAN.md
 ```

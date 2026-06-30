@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import WeeklyPlanner from "../components/WeeklyPlanner";
 import MacroSummary from "../components/MacroSummary";
-import BudgetTracker from "../components/BudgetTracker";
+import GroceryList from "../components/GroceryList";
 import { downloadGroceryList, downloadRecipeBook } from "../api/files";
 
 export default function Planner() {
@@ -41,17 +41,20 @@ export default function Planner() {
 
   return (
     <div className="space-y-6">
-      <BudgetTracker />
       <WeeklyPlanner />
 
-      {/* Action bar */}
+      <div className="grid gap-6 lg:grid-cols-2">
+        <GroceryList />
+        <MacroSummary />
+      </div>
+
       <div className="flex flex-wrap gap-3 pt-2 border-t border-gray-100">
         <button
           onClick={() => handleDownload("grocery")}
           disabled={downloading === "grocery"}
           className="flex items-center gap-2 bg-white border border-gray-200 hover:border-emerald-400 text-gray-700 text-sm font-medium px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
         >
-          {downloading === "grocery" ? "Downloading…" : "⬇ Grocery List"}
+          {downloading === "grocery" ? "Downloading…" : "⬇ Print Grocery List"}
         </button>
 
         <button
@@ -82,8 +85,6 @@ export default function Planner() {
             : "✉ Email My Plan"}
         </button>
       </div>
-
-      <MacroSummary />
     </div>
   );
 }
