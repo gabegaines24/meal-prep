@@ -1,9 +1,11 @@
 import { useState, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { scanFridge } from "../api/scan";
 import type { ScanResult } from "../api/scan";
 import RecipeCard from "./RecipeCard";
 
 export default function FridgeScanner() {
+  const navigate = useNavigate();
   const inputRef = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
@@ -112,6 +114,22 @@ export default function FridgeScanner() {
                 ))}
               </div>
             </div>
+          )}
+
+          {result.ingredients.length > 0 && result.agent_prompt && (
+            <button
+              onClick={() =>
+                navigate("/chat", {
+                  state: {
+                    initialMessage: result.agent_prompt,
+                    scanIngredients: result.ingredients,
+                  },
+                })
+              }
+              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium py-2.5 rounded-lg transition-colors"
+            >
+              Plan meals with Copilot →
+            </button>
           )}
         </div>
       )}

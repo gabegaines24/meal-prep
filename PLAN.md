@@ -25,25 +25,25 @@ todos:
     status: completed
   - id: rag-index
     content: "Embed cached recipes into ChromaDB; index title, macros, ingredients, instructions per document"
-    status: pending
+    status: completed
   - id: rag-agent-tools
     content: "Define Claude tool-use functions mirroring existing FastAPI routes for the agent to call"
-    status: pending
+    status: completed
   - id: rag-chat-route
     content: "Build POST /chat streaming SSE route — retrieves context from Chroma, invokes agent loop"
-    status: pending
+    status: completed
   - id: rag-doc-ingest
     content: "Route + UI for uploading custom documents (PDFs, text) into the vector store"
-    status: pending
+    status: completed
   - id: rag-chat-ui
     content: "Chat panel component + Chat page wired to /chat SSE; show citations and action confirmations"
-    status: pending
+    status: completed
   - id: rag-scan-agent
     content: "Upgrade fridge scanner to launch the agent with scan results instead of returning a static list"
-    status: pending
+    status: completed
   - id: rag-memory
     content: "Persist condensed conversation summaries per session; retrieve on new chat for preference memory"
-    status: pending
+    status: completed
 isProject: false
 ---
 
@@ -53,7 +53,7 @@ isProject: false
 
 **Phase 1 and Phase 2 are complete.** The app focuses on nutrition-driven meal planning and grocery lists. Store pricing has been removed.
 
-**Phase 3 (next):** RAG-powered copilot — a chat interface where users talk to an agent that can read their plan, query a vector store of recipes and custom documents, and take actions (assign slots, autogenerate, build grocery lists) entirely through conversation.
+**Phase 3 is complete.** RAG-powered copilot with chat UI, agent tool-use, document ingest, fridge scan handoff, and conversation memory.
 
 ---
 

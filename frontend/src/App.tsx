@@ -3,9 +3,11 @@ import Planner from "./pages/Planner";
 import Goals from "./pages/Goals";
 import Scanner from "./pages/Scanner";
 import ProfilePage from "./pages/Profile";
+import Chat from "./pages/Chat";
 
 const NAV = [
   { to: "/", label: "Planner" },
+  { to: "/chat", label: "Copilot" },
   { to: "/goals", label: "Goals" },
   { to: "/scanner", label: "Fridge Scanner" },
   { to: "/profile", label: "Profile" },
@@ -39,6 +41,7 @@ export default function App() {
       <main className="max-w-6xl mx-auto px-4 py-6">
         <Routes>
           <Route path="/" element={<Planner />} />
+          <Route path="/chat" element={<Chat />} />
           <Route path="/goals" element={<Goals />} />
           <Route path="/scanner" element={<Scanner />} />
           <Route path="/profile" element={<ProfilePage />} />
