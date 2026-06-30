@@ -3,6 +3,7 @@ import type { Recipe } from "./recipes";
 export interface ScanResult {
   ingredients: string[];
   recipes: Recipe[];
+  agent_prompt?: string | null;
 }
 
 export async function scanFridge(file: File): Promise<ScanResult> {

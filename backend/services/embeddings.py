@@ -1,14 +1,8 @@
 """
 ChromaDB vector store for the meal planner RAG layer.
-
-Collections
------------
-recipes   — one document per cached Recipe row
-documents — user-uploaded file chunks (PDF / text)
-memory    — condensed per-session conversation summaries
-
-Embedding model: all-MiniLM-L6-v2 (sentence-transformers, local, no API key needed)
 """
+
+from __future__ import annotations
 
 import json
 import os
