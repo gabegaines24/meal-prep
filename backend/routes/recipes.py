@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from backend.database import get_db
 from backend.models.models import Recipe, UserProfile
 from backend.services import spoonacular
+from backend.services import embeddings as embed_svc
 
 router = APIRouter()
 
@@ -64,7 +65,7 @@ def _to_out(recipe: Recipe) -> RecipeOut:
 
 
 def _upsert_recipe(db: Session, data: dict) -> Recipe:
-    """Insert or update a recipe row from a Spoonacular data dict."""
+    """Insert or update a recipe row from a Spoonacular data dict, then embed it."""
     existing = (
         db.query(Recipe)
         .filter(Recipe.spoonacular_id == data["spoonacular_id"])
@@ -75,13 +76,23 @@ def _upsert_recipe(db: Session, data: dict) -> Recipe:
             setattr(existing, key, value)
         db.commit()
         db.refresh(existing)
+        _embed_quietly(existing)
         return existing
 
     recipe = Recipe(**data)
     db.add(recipe)
     db.commit()
     db.refresh(recipe)
+    _embed_quietly(recipe)
     return recipe
+
+
+def _embed_quietly(recipe: Recipe) -> None:
+    """Fire-and-forget embedding; never raises so it doesn't block a search."""
+    try:
+        embed_svc.upsert_recipe(recipe)
+    except Exception:
+        pass
 
 
 @router.get("/search", response_model=list[RecipeOut])
