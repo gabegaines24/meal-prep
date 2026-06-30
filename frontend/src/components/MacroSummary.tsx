@@ -75,7 +75,7 @@ export default function MacroSummary() {
               {week.daily_macros.map((day) => (
                 <tr key={day.day}>
                   <td className="py-1.5 pr-4 font-medium text-gray-600">{day.day}</td>
-                  {MACROS.map(({ key, color }) => {
+                  {MACROS.map(({ key }) => {
                     const over = day[key] > goals[key];
                     return (
                       <td
