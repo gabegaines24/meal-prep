@@ -6,11 +6,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.database import Base, engine
+from backend.migrations import run_migrations
 from backend.routes import chat, email, files, goals, ingest, meals, profile, recipes, scan
 
 
 def create_tables():
     Base.metadata.create_all(bind=engine)
+    run_migrations(engine)
 
 
 def send_weekly_digest():

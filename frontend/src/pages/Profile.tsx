@@ -21,6 +21,8 @@ const ALLERGEN_OPTIONS = [
 ];
 
 const DEFAULT: Profile = {
+  zip_code: "",
+  weekly_budget: 0,
   allergens: [],
   diet_type: "",
 };
@@ -38,6 +40,8 @@ export default function ProfilePage() {
     onSuccess: (updated) => {
       qc.setQueryData(["profile"], updated);
       qc.invalidateQueries({ queryKey: ["recipes"] });
+      qc.invalidateQueries({ queryKey: ["budget-summary"] });
+      qc.invalidateQueries({ queryKey: ["grocery-list"] });
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
     },
@@ -56,13 +60,52 @@ export default function ProfilePage() {
     <div className="max-w-lg mx-auto space-y-6">
       <h1 className="text-xl font-bold text-gray-800">My Profile</h1>
       <p className="text-sm text-gray-500">
-        Diet and allergen settings filter recipe search and auto-generate suggestions.
+        Diet, allergens, zip, and budget settings filter recipe search and grocery pricing.
       </p>
 
       <form
         onSubmit={(e) => { e.preventDefault(); save.mutate(form); }}
         className="space-y-6"
       >
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 space-y-4">
+          <h2 className="font-semibold text-gray-700">Location & Budget</h2>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-600 mb-1">Zip code</label>
+            <input
+              type="text"
+              placeholder="e.g. 30309"
+              value={form.zip_code}
+              onChange={(e) => setForm((f) => ({ ...f, zip_code: e.target.value }))}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-400"
+            />
+            <p className="text-xs text-gray-400 mt-1">
+              Used for estimated Walmart grocery prices in your area.
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-600 mb-1">
+              Weekly grocery budget <span className="text-gray-400 font-normal">(USD)</span>
+            </label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">$</span>
+              <input
+                type="number"
+                min={0}
+                step={5}
+                value={form.weekly_budget || ""}
+                onChange={(e) => setForm((f) => ({ ...f, weekly_budget: Number(e.target.value) || 0 }))}
+                className="w-full border border-gray-200 rounded-lg pl-7 pr-3 py-2 text-sm focus:outline-none focus:border-emerald-400"
+              />
+            </div>
+            <p className="text-xs text-gray-400 mt-1">
+              Recipe search filters to ~${form.weekly_budget ? (form.weekly_budget / 21).toFixed(2) : "—"}/meal.
+              Grocery prices use Walmart estimates via Apify. Amounts are approximate.
+            </p>
+          </div>
+        </div>
+
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 space-y-3">
           <h2 className="font-semibold text-gray-700">Diet Type</h2>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -101,11 +144,6 @@ export default function ProfilePage() {
               </button>
             ))}
           </div>
-          {form.allergens.length > 0 && (
-            <p className="text-xs text-gray-400">
-              Recipes containing {form.allergens.join(", ")} will be filtered out of all searches.
-            </p>
-          )}
         </div>
 
         <button

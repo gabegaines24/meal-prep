@@ -5,8 +5,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
-from backend.models.models import MealPlan
+from backend.models.models import MealPlan, UserProfile
 from backend.services import file_gen, resend as resend_svc
+from backend.services.grocery import build_grocery_list
 
 router = APIRouter()
 
@@ -38,7 +39,9 @@ async def send_digest(week_start: Optional[date] = None, db: Session = Depends(g
         )
 
     weekly_macros = _compute_weekly_macros(slots)
-    grocery_html = file_gen.grocery_list_html(week_start=start, slots=slots)
+    profile = db.query(UserProfile).filter(UserProfile.id == 1).first()
+    grocery_data = await build_grocery_list(start, slots, profile, db)
+    grocery_html = file_gen.grocery_list_html(week_start=start, grocery_data=grocery_data)
     recipe_html = file_gen.recipe_book_html(week_start=start, slots=slots)
 
     try:

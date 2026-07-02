@@ -27,6 +27,8 @@ class Recipe(Base):
     fat = Column(Float, nullable=True)
     ingredients_json = Column(String, nullable=True)   # JSON list of ingredient strings
     instructions_json = Column(String, nullable=True)  # JSON list of step strings
+    estimated_cost_per_serving = Column(Float, nullable=True)
+    price_source = Column(String, nullable=True)  # spoonacular | walmart | walmart_detail | usda | unknown
     favorited = Column(Boolean, default=False)
 
     meal_slots = relationship("MealPlan", back_populates="recipe")
@@ -58,8 +60,24 @@ class UserProfile(Base):
     __tablename__ = "user_profile"
 
     id = Column(Integer, primary_key=True, default=1)
+    zip_code = Column(String, default="")
+    store_name = Column(String, default="")
+    kroger_location_id = Column(String, default="")
+    weekly_budget = Column(Float, default=0.0)
     allergens_json = Column(String, default="[]")  # JSON list, e.g. ["peanuts", "gluten"]
     diet_type = Column(String, default="")         # Spoonacular value or empty
+
+
+class PriceCache(Base):
+    __tablename__ = "price_cache"
+
+    id = Column(Integer, primary_key=True, index=True)
+    ingredient_key = Column(String, nullable=False, index=True)
+    location_id = Column(String, nullable=True, index=True)
+    price = Column(Float, nullable=False)
+    unit = Column(String, nullable=True)
+    source = Column(String, nullable=False)  # walmart | walmart_detail | usda
+    fetched_at = Column(DateTime, default=datetime.utcnow, index=True)
 
 
 class ChatHistory(Base):

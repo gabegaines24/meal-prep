@@ -7,9 +7,10 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
-from backend.models.models import MacroGoals, MealPlan, MealType, Recipe
+from backend.models.models import MacroGoals, MealPlan, MealType, Recipe, UserProfile
 from backend.routes.recipes import _load_filters, _upsert_recipe
 from backend.services import spoonacular
+from backend.services import pricing as pricing_svc
 
 router = APIRouter()
 
@@ -135,6 +136,9 @@ def _score_recipe(
     meal_target: dict[str, float],
     day_remaining: dict[str, float],
     week_remaining: dict[str, float],
+    per_meal_budget: float | None = None,
+    week_cost_so_far: float = 0.0,
+    weekly_budget: float = 0.0,
 ) -> float:
     """Lower is better."""
     score = 0.0
@@ -150,6 +154,19 @@ def _score_recipe(
 
     if recipe.favorited:
         score *= 0.65
+
+    cost = pricing_svc.recipe_cost_per_serving(recipe)
+    if per_meal_budget and cost is not None:
+        if cost > per_meal_budget:
+            score += 5.0 + (cost - per_meal_budget) / max(per_meal_budget, 0.01)
+        else:
+            score += 0.1 * abs(cost - per_meal_budget) / max(per_meal_budget, 0.01)
+
+    if weekly_budget > 0 and cost is not None:
+        projected = week_cost_so_far + cost
+        if projected > weekly_budget:
+            score += 3.0 * (projected - weekly_budget) / weekly_budget
+
     return score
 
 
@@ -164,6 +181,9 @@ async def _ensure_recipe_details(db: Session, recipe: Recipe) -> Recipe:
 
 
 async def _seed_recipe_pool(db: Session, diet: str, allergens: list[str]) -> list[Recipe]:
+    profile = db.query(UserProfile).filter(UserProfile.id == 1).first()
+    max_price = pricing_svc.spoonacular_max_price_cents(profile)
+
     favorites = db.query(Recipe).filter(Recipe.favorited == True).all()
     all_recipes = db.query(Recipe).all()
 
@@ -172,7 +192,11 @@ async def _seed_recipe_pool(db: Session, diet: str, allergens: list[str]) -> lis
 
     for query in SEED_QUERIES:
         results = await spoonacular.search_recipes(
-            query, number=6, diet=diet, intolerances=allergens
+            query,
+            number=6,
+            diet=diet,
+            intolerances=allergens,
+            max_price_cents=max_price,
         )
         for data in results:
             _upsert_recipe(db, data)
@@ -274,6 +298,10 @@ async def autogenerate(week_start: Optional[date] = None, db: Session = Depends(
         db.refresh(goals)
 
     diet, allergens = _load_filters(db)
+    profile = db.query(UserProfile).filter(UserProfile.id == 1).first()
+    per_meal_budget = pricing_svc.get_per_meal_budget(profile)
+    weekly_budget = profile.weekly_budget if profile and profile.weekly_budget else 0.0
+
     recipes = await _seed_recipe_pool(db, diet, allergens)
     if not recipes:
         raise HTTPException(
@@ -303,6 +331,12 @@ async def autogenerate(week_start: Optional[date] = None, db: Session = Depends(
     used_ids: set[int] = {
         s.recipe_id for s in existing_slots if s.recipe_id is not None
     }
+    week_cost_so_far = 0.0
+    for slot in existing_slots:
+        if slot.recipe:
+            cost = pricing_svc.recipe_cost_per_serving(slot.recipe)
+            if cost is not None:
+                week_cost_so_far += cost
 
     for day in range(7):
         for meal_type in MealType:
@@ -327,9 +361,26 @@ async def autogenerate(week_start: Optional[date] = None, db: Session = Depends(
                 for key in MACRO_WEIGHTS
             }
 
+            eligible = recipes
+            if per_meal_budget:
+                eligible = [
+                    r
+                    for r in recipes
+                    if pricing_svc.recipe_cost_per_serving(r) is None
+                    or pricing_svc.recipe_cost_per_serving(r) <= per_meal_budget
+                ] or recipes
+
             scored = sorted(
-                recipes,
-                key=lambda r: _score_recipe(r, meal_target, day_remaining, week_remaining),
+                eligible,
+                key=lambda r: _score_recipe(
+                    r,
+                    meal_target,
+                    day_remaining,
+                    week_remaining,
+                    per_meal_budget=per_meal_budget,
+                    week_cost_so_far=week_cost_so_far,
+                    weekly_budget=weekly_budget,
+                ),
             )
             top = scored[:5]
             # Prefer unused recipes for variety, fall back if pool is small
@@ -345,6 +396,9 @@ async def autogenerate(week_start: Optional[date] = None, db: Session = Depends(
             )
             db.add(slot)
             used_ids.add(chosen.id)
+            chosen_cost = pricing_svc.recipe_cost_per_serving(chosen)
+            if chosen_cost is not None:
+                week_cost_so_far += chosen_cost
             for key in week_totals:
                 week_totals[key] += _macro_value(chosen, key)
                 daily_totals[day][key] += _macro_value(chosen, key)

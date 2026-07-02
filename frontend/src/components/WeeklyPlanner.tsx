@@ -48,6 +48,7 @@ export default function WeeklyPlanner() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["week"] });
       qc.invalidateQueries({ queryKey: ["grocery-list"] });
+      qc.invalidateQueries({ queryKey: ["budget-summary"] });
       setDrawer(null);
       setSearch("");
       setSearchResults([]);
@@ -60,6 +61,7 @@ export default function WeeklyPlanner() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["week"] });
       qc.invalidateQueries({ queryKey: ["grocery-list"] });
+      qc.invalidateQueries({ queryKey: ["budget-summary"] });
     },
   });
 
@@ -68,6 +70,7 @@ export default function WeeklyPlanner() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["week"] });
       qc.invalidateQueries({ queryKey: ["grocery-list"] });
+      qc.invalidateQueries({ queryKey: ["budget-summary"] });
     },
   });
 

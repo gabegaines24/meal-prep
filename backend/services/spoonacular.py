@@ -23,13 +23,16 @@ async def search_recipes(
     number: int = 12,
     diet: str = "",
     intolerances: list[str] | None = None,
+    max_price_cents: int | None = None,
 ) -> list[dict]:
-    """Search recipes by keyword with optional diet and allergen filters."""
+    """Search recipes by keyword with optional diet, allergen, and budget filters."""
     extra: dict[str, Any] = {}
     if diet:
         extra["diet"] = diet
     if intolerances:
         extra["intolerances"] = ",".join(intolerances)
+    if max_price_cents is not None and max_price_cents > 0:
+        extra["maxPrice"] = max_price_cents
 
     async with httpx.AsyncClient() as client:
         resp = await client.get(
@@ -109,6 +112,10 @@ def _normalise(raw: dict) -> dict:
             if text:
                 steps.append(text)
 
+    price_per_serving = raw.get("pricePerServing")
+    if price_per_serving is None:
+        price_per_serving = raw.get("price_per_serving")
+
     return {
         "spoonacular_id": raw.get("id"),
         "title": raw.get("title", ""),
@@ -120,4 +127,6 @@ def _normalise(raw: dict) -> dict:
         "fat": nutrients.get("fat"),
         "ingredients_json": json.dumps(ingredients),
         "instructions_json": json.dumps(steps) if steps else None,
+        "estimated_cost_per_serving": float(price_per_serving) if price_per_serving is not None else None,
+        "price_source": "spoonacular" if price_per_serving is not None else None,
     }

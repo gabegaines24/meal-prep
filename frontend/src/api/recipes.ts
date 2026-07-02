@@ -11,6 +11,8 @@ export interface Recipe {
   carbs?: number;
   fat?: number;
   ingredients: string[];
+  estimated_cost_per_serving?: number | null;
+  price_source?: string | null;
   favorited: boolean;
 }
 

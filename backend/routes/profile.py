@@ -11,6 +11,8 @@ router = APIRouter()
 
 
 class ProfileSchema(BaseModel):
+    zip_code: str = ""
+    weekly_budget: float = 0.0
     allergens: list[str] = []
     diet_type: str = ""
 
@@ -34,6 +36,8 @@ def _to_schema(profile: UserProfile) -> ProfileSchema:
     except json.JSONDecodeError:
         pass
     return ProfileSchema(
+        zip_code=profile.zip_code or "",
+        weekly_budget=profile.weekly_budget or 0.0,
         allergens=allergens,
         diet_type=profile.diet_type or "",
     )
@@ -47,6 +51,8 @@ def get_profile(db: Session = Depends(get_db)):
 @router.put("", response_model=ProfileSchema)
 def update_profile(payload: ProfileSchema, db: Session = Depends(get_db)):
     profile = _get_or_create(db)
+    profile.zip_code = payload.zip_code
+    profile.weekly_budget = payload.weekly_budget
     profile.allergens_json = json.dumps(payload.allergens)
     profile.diet_type = payload.diet_type
     db.commit()

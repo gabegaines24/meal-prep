@@ -55,17 +55,22 @@ isProject: false
 
 **Phase 3 is complete.** RAG-powered copilot with chat UI, agent tool-use, document ingest, fridge scan handoff, and conversation memory.
 
+**Phase 4 is complete.** Budget-aware pricing with zip-based Walmart estimates (Apify), Spoonacular `maxPrice` filtering, USDA fallback, AP-style price cache, priced grocery lists, and budget-aware autogenerate.
+
 ---
 
 ## Product Focus
 
 | In scope | Out of scope (for now) |
 |----------|------------------------|
-| Search and cache recipes with full nutrition data | Kroger / live store pricing |
-| Set daily macro goals (calories, protein, carbs, fat) | Weekly budget tracking |
-| Auto-generate a week that hits macro targets | `estimated_cost` on recipes |
-| Build grocery lists from planned meals | Store location configuration |
-| Diet type + allergen filters on search | Price columns in exports/email |
+| Search and cache recipes with full nutrition data | Multi-retailer store picker |
+| Set daily macro goals (calories, protein, carbs, fat) | Real-time cart checkout |
+| Auto-generate a week that hits macro targets | GPS geolocation (zip only) |
+| Build grocery lists from planned meals | |
+| Diet type + allergen filters on search | |
+| Weekly budget + per-meal price filtering | |
+| Walmart price estimates by zip (Apify) + priced grocery lists | |
+| USDA commodity price fallback (AP cache) | |
 | Fridge scan → ingredient-based recipe suggestions | |
 | RAG over recipe cache + custom documents | |
 | Agent copilot with tool-use (plan, assign, generate) | |
@@ -395,7 +400,8 @@ This lets the agent say "I remember you said you don't like cilantro" without re
 | `GET /recipes/{id}` | Fetch + cache recipe |
 | `POST /recipes/{id}/favorite` | Toggle favorite |
 | `GET/PUT /goals` | Daily macro targets |
-| `GET/PUT /profile` | Diet type + allergens |
+| `GET/PUT /profile` | Diet type + allergens + zip + budget |
+| `GET /files/budget-summary` | Weekly budget vs estimated grocery total |
 | `POST /scan` | Image → agent → plan actions |
 | `GET /files/grocery-list/data` | Grocery list JSON |
 | `GET /files/grocery-list` | Grocery list HTML download |
@@ -416,8 +422,49 @@ ANTHROPIC_API_KEY=        # Claude (vision + agent reasoning)
 SPOONACULAR_API_KEY=      # Recipe search + nutrition
 RESEND_API_KEY=           # Weekly email digest
 EMAIL_RECIPIENT=          # Digest recipient address
-OPENAI_API_KEY=           # Optional — only needed if using OpenAI embeddings
+APIFY_API_TOKEN=          # Optional — Apify Walmart grocery price estimates
+CHROMA_PATH=./chroma_db   # Local ChromaDB index path
 ```
+
+---
+
+## Phase 4 — Budget-Aware Pricing & Location
+
+### Overview
+
+Reintroduce budget as a planning constraint without regressing macro goals, RAG copilot, or grocery list UX. Uses **Apify Walmart (two-tier) + Spoonacular `maxPrice` + USDA fallback** with AP-style cached prices (never block UI on Apify outage).
+
+### 4a. Profile + schema
+
+- `UserProfile`: `zip_code`, `weekly_budget` (legacy `store_name` / `kroger_location_id` columns unused)
+- `Recipe`: `estimated_cost_per_serving`, `price_source`
+- `price_cache` table with 24h Walmart / 30d USDA TTL (zip-scoped via `location_id`)
+
+### 4b. Pricing layer
+
+- `backend/services/apify_walmart.py` — Tier 1 Unfenced search+zip, Tier 2 detail enrichment
+- `backend/services/usda.py` — commodity fallback from bundled JSON
+- `backend/services/pricing.py` — orchestrator: cache → Apify → USDA
+
+### 4c. Recipe search + autogenerate
+
+- Spoonacular `maxPrice` when `weekly_budget > 0` (per-meal = budget / 21)
+- Autogenerate soft penalty + hard per-meal cap when budget set
+
+### 4d. Priced grocery + exports
+
+- `build_grocery_list()` returns item prices + `budget_summary`
+- HTML exports: price column, budget bar, "Estimated Walmart prices for ZIP …" footer
+- Email attachments: separate priced grocery list + recipe book
+
+### 4e. Frontend
+
+- Profile: zip + weekly budget (no store picker)
+- `BudgetTracker` on planner, cost badge on `RecipeCard`, prices in `GroceryList`
+
+### 4f. Agent
+
+- Extended `get_profile`, `get_budget_summary`; system prompt respects weekly budget
 
 ---
 
@@ -430,3 +477,15 @@ OPENAI_API_KEY=           # Optional — only needed if using OpenAI embeddings
 5. **Doc ingest** — `ingest.py`, PDF parsing, chunk + embed pipeline, document management UI
 6. **Scanner upgrade** — wire scan results into agent instead of static Spoonacular list
 7. **Memory** — per-session preference summaries, retrieval at conversation start
+
+---
+
+## Build Order (Phase 4)
+
+1. **Schema + profile** — UserProfile budget/zip fields, `price_cache` table
+2. **Pricing layer** — `apify_walmart.py`, `usda.py`, `pricing.py` with AP cache (24h Walmart, 30d USDA)
+3. **Recipe budget filter** — Spoonacular `maxPrice`, `estimated_cost_per_serving` on recipes
+4. **Budget autogenerate** — soft/hard cost scoring in `/meals/autogenerate`
+5. **Priced grocery + exports** — JSON/HTML grocery list with prices, email attachments
+6. **Frontend** — Profile zip+budget, BudgetTracker, RecipeCard cost badge, GroceryList prices
+7. **Agent** — `get_budget_summary`, extended `get_profile`

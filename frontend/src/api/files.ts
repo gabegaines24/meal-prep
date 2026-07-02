@@ -1,18 +1,34 @@
+export interface BudgetSummary {
+  budget: number;
+  estimated_total: number;
+  remaining: number;
+  over_budget: boolean;
+  prices_as_of?: string | null;
+  stale?: boolean;
+  store_name?: string;
+  zip_code?: string;
+}
+
 export interface GroceryItem {
   name: string;
   recipes: string[];
   category: string;
+  price?: number | null;
+  price_source?: string | null;
+  stale?: boolean;
 }
 
 export interface GroceryCategory {
   name: string;
   items: GroceryItem[];
+  subtotal?: number | null;
 }
 
 export interface GroceryList {
   week_start_date: string;
   items: GroceryItem[];
   categories: GroceryCategory[];
+  budget_summary: BudgetSummary;
 }
 
 function _triggerDownload(blob: Blob, filename: string) {
@@ -22,6 +38,15 @@ function _triggerDownload(blob: Blob, filename: string) {
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+export async function fetchBudgetSummary(weekStart?: string): Promise<BudgetSummary> {
+  const url = weekStart
+    ? `/api/files/budget-summary?week_start=${weekStart}`
+    : "/api/files/budget-summary";
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
 }
 
 export async function fetchGroceryList(weekStart?: string): Promise<GroceryList> {

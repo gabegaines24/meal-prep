@@ -1,6 +1,8 @@
 const BASE = "/api/profile";
 
 export interface Profile {
+  zip_code: string;
+  weekly_budget: number;
   allergens: string[];
   diet_type: string;
 }

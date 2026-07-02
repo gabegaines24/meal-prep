@@ -8,8 +8,6 @@ Generates standalone HTML documents for a given week's meal plan:
 import json
 from datetime import date
 
-from backend.services.grocery import build_grocery_list
-
 DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
 _BASE_STYLE = """
@@ -26,6 +24,12 @@ _BASE_STYLE = """
   th { background: #d8f3dc; text-align: left; padding: 8px 10px; font-size: 0.85rem; }
   td { padding: 7px 10px; border-bottom: 1px solid #f0f0f0; font-size: 0.9rem; }
   tr:last-child td { border-bottom: none; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 12px;
+           font-size: 0.75rem; font-weight: 600; }
+  .green { background: #d8f3dc; color: #1b4332; }
+  .red { background: #ffe0e0; color: #7f1d1d; }
+  .total-row td { font-weight: 700; background: #f6fef9; }
+  .footer-note { font-size: 0.8rem; color: #888; margin-top: 24px; }
   .macro-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 8px;
                 margin: 8px 0 16px; }
   .macro-cell { background: #f6fef9; border: 1px solid #d8f3dc; border-radius: 6px;
@@ -42,27 +46,60 @@ _BASE_STYLE = """
 """
 
 
-def grocery_list_html(week_start: date, slots: list) -> str:
-    """Generate a printable grocery list HTML document."""
-    data = build_grocery_list(week_start, slots)
+def grocery_list_html(week_start: date, grocery_data: dict) -> str:
+    """Generate a printable grocery list HTML document with optional pricing."""
+    data = grocery_data
+    budget = data.get("budget_summary", {})
     sections = ""
 
-    for category in data["categories"]:
-        rows = "".join(
-            f"<tr><td>☐ {item['name']}</td>"
-            f"<td style='color:#888;font-size:.8rem'>{', '.join(item['recipes'])}</td></tr>\n"
-            for item in category["items"]
-        )
+    if budget.get("budget", 0) > 0:
+        over = budget.get("over_budget", False)
+        cls = "red" if over else "green"
+        label = "Over budget" if over else "Within budget"
         sections += f"""
-        <h2>{category['name']}</h2>
+        <h2>Budget Summary</h2>
         <table>
-          <thead><tr><th>Ingredient</th><th>Used in</th></tr></thead>
+          <tr><td>Estimated total</td><td style='text-align:right'><strong>${budget.get('estimated_total', 0):.2f}</strong></td></tr>
+          <tr><td>Weekly budget</td><td style='text-align:right'>${budget.get('budget', 0):.2f}</td></tr>
+          <tr class='total-row'><td>Status</td><td style='text-align:right'><span class='badge {cls}'>{label}</span></td></tr>
+        </table>
+        """
+
+    for category in data.get("categories", []):
+        rows = ""
+        for item in category["items"]:
+            price_cell = f"${item['price']:.2f}" if item.get("price") is not None else "—"
+            stale = " *" if item.get("stale") else ""
+            rows += (
+                f"<tr><td>☐ {item['name']}{stale}</td>"
+                f"<td style='text-align:right'>{price_cell}</td>"
+                f"<td style='color:#888;font-size:.8rem'>{', '.join(item['recipes'])}</td></tr>\n"
+            )
+        subtotal = ""
+        if category.get("subtotal"):
+            subtotal = f" · subtotal ${category['subtotal']:.2f}"
+        sections += f"""
+        <h2>{category['name']}{subtotal}</h2>
+        <table>
+          <thead><tr><th>Ingredient</th><th style='text-align:right'>Est. Price</th><th>Used in</th></tr></thead>
           <tbody>{rows}</tbody>
         </table>
         """
 
     if not sections:
         sections = "<p>No ingredients found. Assign recipes with ingredient data first.</p>"
+
+    store_line = ""
+    zip_code = budget.get("zip_code") or ""
+    if zip_code:
+        store_line = f" · Estimated Walmart prices for ZIP {zip_code}"
+    elif budget.get("store_name"):
+        store_line = f" · {budget['store_name']}"
+    prices_note = ""
+    if budget.get("prices_as_of"):
+        prices_note = f" · Prices as of {budget['prices_as_of'][:10]}"
+        if budget.get("stale"):
+            prices_note += " (estimated)"
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -71,8 +108,9 @@ def grocery_list_html(week_start: date, slots: list) -> str:
 </head>
 <body>
   <h1>Grocery List</h1>
-  <p class="sub">Week of {week_start.strftime('%B %d, %Y')} · {len(data['items'])} items</p>
+  <p class="sub">Week of {week_start.strftime('%B %d, %Y')} · {len(data.get('items', []))} items{store_line}{prices_note}</p>
   {sections}
+  <p class="footer-note">Estimated Walmart prices — verify in store before shopping. * Stale or fallback estimate.</p>
 </body>
 </html>"""
 
@@ -130,10 +168,19 @@ def recipe_book_html(week_start: date, slots: list) -> str:
         )
         page_break = '<div class="page-break"></div>' if i < len(unique_recipes) - 1 else ""
 
+        cost_html = ""
+        if getattr(recipe, "estimated_cost_per_serving", None) is not None:
+            src = getattr(recipe, "price_source", None) or "estimated"
+            cost_html = (
+                f"<p style='color:#666;font-size:.85rem;margin-bottom:8px'>"
+                f"Est. ${recipe.estimated_cost_per_serving:.2f}/serving ({src})</p>"
+            )
+
         sections += f"""
         <section>
           {img_html}
           <h2>{recipe.title}</h2>
+          {cost_html}
           {macros}
           <h3>Ingredients</h3>
           {ing_table}

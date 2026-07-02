@@ -2,6 +2,28 @@ import type { Recipe } from "../api/recipes";
 import { toggleFavorite } from "../api/recipes";
 import { useQueryClient } from "@tanstack/react-query";
 
+function CostBadge({ cost, source }: { cost?: number | null; source?: string | null }) {
+  if (cost == null) return null;
+  const label =
+    source === "walmart"
+      ? "Walmart"
+      : source === "walmart_detail"
+        ? "Walmart (detail)"
+        : source === "usda"
+          ? "USDA est."
+          : source === "spoonacular"
+            ? "Spoonacular"
+            : "est.";
+  return (
+    <span
+      className="text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full px-2 py-0.5"
+      title={`Price source: ${label}`}
+    >
+      ${cost.toFixed(2)}/serving
+    </span>
+  );
+}
+
 interface Props {
   recipe: Recipe;
   compact?: boolean;
@@ -39,6 +61,7 @@ export default function RecipeCard({ recipe, compact = false, onSelect, onRemove
               <p className="text-xs text-gray-400">
                 {recipe.calories.toFixed(0)} kcal
                 {recipe.protein != null && ` · ${recipe.protein.toFixed(0)}g pro`}
+                {recipe.estimated_cost_per_serving != null && ` · $${recipe.estimated_cost_per_serving.toFixed(2)}`}
               </p>
             )}
           </div>
@@ -79,6 +102,11 @@ export default function RecipeCard({ recipe, compact = false, onSelect, onRemove
             ★
           </button>
         </div>
+        {recipe.estimated_cost_per_serving != null && (
+          <div className="mt-1">
+            <CostBadge cost={recipe.estimated_cost_per_serving} source={recipe.price_source} />
+          </div>
+        )}
         <div className="mt-2 grid grid-cols-4 gap-1 text-center text-xs">
           {[
             { label: "Cal", value: recipe.calories },

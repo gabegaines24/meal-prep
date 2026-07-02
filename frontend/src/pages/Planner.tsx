@@ -3,6 +3,7 @@ import { useMutation } from "@tanstack/react-query";
 import WeeklyPlanner from "../components/WeeklyPlanner";
 import MacroSummary from "../components/MacroSummary";
 import GroceryList from "../components/GroceryList";
+import BudgetTracker from "../components/BudgetTracker";
 import { downloadGroceryList, downloadRecipeBook } from "../api/files";
 
 export default function Planner() {
@@ -41,6 +42,7 @@ export default function Planner() {
 
   return (
     <div className="space-y-6">
+      <BudgetTracker />
       <WeeklyPlanner />
 
       <div className="grid gap-6 lg:grid-cols-2">

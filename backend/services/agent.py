@@ -29,6 +29,7 @@ from backend.routes.meals import (
 from backend.routes.recipes import _load_filters, _to_out, _upsert_recipe
 from backend.services import embeddings as embed_svc
 from backend.services import spoonacular
+from backend.services import pricing as pricing_svc
 from backend.services.grocery import build_grocery_list
 
 MODEL = "claude-opus-4-5"
@@ -43,7 +44,8 @@ and make substitutions. You have tools to read and modify their meal plan.
 Guidelines:
 - Use day numbers 0–6 (Monday=0 … Sunday=6) when calling plan tools.
 - Prefer semantic recipe search for substitutions; use Spoonacular search for fresh ideas.
-- Respect the user's diet type and allergens from get_profile before suggesting recipes.
+- Respect the user's diet type, allergens, and weekly budget from get_profile before suggesting recipes.
+- When budget is set, prefer recipes within the per-meal budget (~weekly_budget / 21).
 - When you assign meals or autogenerate a week, briefly confirm what you did.
 - Cite recipe titles when you retrieve them from search.
 - Be concise and practical."""
@@ -158,8 +160,19 @@ TOOLS: list[dict] = [
     },
     {
         "name": "get_profile",
-        "description": "Get user diet type and allergen list.",
+        "description": "Get user diet, allergens, zip code, and weekly budget.",
         "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
+    {
+        "name": "get_budget_summary",
+        "description": "Get estimated grocery spend vs weekly budget for the current meal plan.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "week_start": {"type": "string", "description": "Optional week start YYYY-MM-DD."},
+            },
+            "required": [],
+        },
     },
     {
         "name": "search_documents",
@@ -278,8 +291,13 @@ async def execute_tool(
 
     if name == "search_recipes_spoonacular":
         diet, allergens = _load_filters(db)
+        profile = db.query(UserProfile).filter(UserProfile.id == 1).first()
+        max_price = pricing_svc.spoonacular_max_price_cents(profile)
         results = await spoonacular.search_recipes(
-            tool_input["query"], diet=diet, intolerances=allergens
+            tool_input["query"],
+            diet=diet,
+            intolerances=allergens,
+            max_price_cents=max_price,
         )
         recipes = [_to_out(_upsert_recipe(db, r)).model_dump() for r in results]
         for r in recipes:
@@ -346,19 +364,38 @@ async def execute_tool(
         slots = db.query(MealPlan).filter(MealPlan.week_start_date == start).all()
         if not slots:
             return {"error": "No meal plan for this week."}, ui_events
-        return build_grocery_list(start, slots), ui_events
+        profile = db.query(UserProfile).filter(UserProfile.id == 1).first()
+        data = await build_grocery_list(start, slots, profile, db)
+        return data, ui_events
+
+    if name == "get_budget_summary":
+        start = _monday(_parse_date(tool_input.get("week_start")) or date.today())
+        slots = db.query(MealPlan).filter(MealPlan.week_start_date == start).all()
+        profile = db.query(UserProfile).filter(UserProfile.id == 1).first()
+        return await pricing_svc.price_week(slots, profile, db), ui_events
 
     if name == "get_profile":
         profile = db.query(UserProfile).filter(UserProfile.id == 1).first()
         allergens: list[str] = []
         diet = ""
+        zip_code = ""
+        weekly_budget = 0.0
         if profile:
             diet = profile.diet_type or ""
+            zip_code = profile.zip_code or ""
+            weekly_budget = profile.weekly_budget or 0.0
             try:
                 allergens = json.loads(profile.allergens_json or "[]")
             except json.JSONDecodeError:
                 pass
-        return {"diet_type": diet, "allergens": allergens}, ui_events
+        per_meal = pricing_svc.get_per_meal_budget(profile)
+        return {
+            "diet_type": diet,
+            "allergens": allergens,
+            "zip_code": zip_code,
+            "weekly_budget": weekly_budget,
+            "per_meal_budget": per_meal,
+        }, ui_events
 
     if name == "search_documents":
         hits = embed_svc.query_documents(

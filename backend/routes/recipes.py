@@ -9,6 +9,7 @@ from backend.database import get_db
 from backend.models.models import Recipe, UserProfile
 from backend.services import spoonacular
 from backend.services import embeddings as embed_svc
+from backend.services import pricing as pricing_svc
 
 router = APIRouter()
 
@@ -26,6 +27,10 @@ def _load_filters(db: Session) -> tuple[str, list[str]]:
     return profile.diet_type or "", allergens
 
 
+def _load_profile(db: Session) -> UserProfile | None:
+    return db.query(UserProfile).filter(UserProfile.id == 1).first()
+
+
 class RecipeOut(BaseModel):
     id: int
     spoonacular_id: Optional[int] = None
@@ -37,6 +42,8 @@ class RecipeOut(BaseModel):
     carbs: Optional[float] = None
     fat: Optional[float] = None
     ingredients: list[str] = []
+    estimated_cost_per_serving: Optional[float] = None
+    price_source: Optional[str] = None
     favorited: bool = False
 
     model_config = {"from_attributes": True}
@@ -60,6 +67,8 @@ def _to_out(recipe: Recipe) -> RecipeOut:
         carbs=recipe.carbs,
         fat=recipe.fat,
         ingredients=ingredients,
+        estimated_cost_per_serving=recipe.estimated_cost_per_serving,
+        price_source=recipe.price_source,
         favorited=recipe.favorited,
     )
 
@@ -101,7 +110,14 @@ async def search_recipes(
     db: Session = Depends(get_db),
 ):
     diet, allergens = _load_filters(db)
-    results = await spoonacular.search_recipes(query, diet=diet, intolerances=allergens)
+    profile = _load_profile(db)
+    max_price = pricing_svc.spoonacular_max_price_cents(profile)
+    results = await spoonacular.search_recipes(
+        query,
+        diet=diet,
+        intolerances=allergens,
+        max_price_cents=max_price,
+    )
     return [_to_out(_upsert_recipe(db, r)) for r in results]
 
 
