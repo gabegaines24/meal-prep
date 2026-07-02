@@ -1,4 +1,3 @@
-# Secrets — never commit real API keys
 .env
 
 # SQLite database (per-user local data)
@@ -24,3 +23,5 @@ frontend/dist/
 
 # macOS
 .DS_Store
+
+chroma_db/
